@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="img/FlowMessage.ico" type="image/x-icon">
+    <title>Чаты – FlowMessage</title>
+    <link rel="stylesheet" href="css/main.css">
+    <script src="js/script.js"></script>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="logo">
+                <img src="img/logo.png" alt="Логотип">
+            </div>
+            <div class="messenger--name">
+                <span>Корпоративный мессенджер FlowMessage</span>
+            </div>
+        </div>
+    </header>
+
+    <div class="two-section">
+        <div class="users">
+            <h2>Пользователи</h2>
+            <div class="search-container">
+                <input type="text" placeholder="Поиск..." id="search-users">
+            </div>
+            <ul class="user-list"></ul>
+        </div>
+
+        <div class="chat">
+            <div class="chat-header">
+                <h2>Чат</h2>
+                <span id="chat-title">Выберите пользователя</span>
+            </div>
+            <div class="message-list"></div>
+        </div>
+    </div>
+
+    <footer>
+        <input type="text" placeholder="Введите сообщение...">
+        <button class="attach--button"></button>
+        <button class="send--button">Отправить</button>
+    </footer>
+</body>
+</html>
