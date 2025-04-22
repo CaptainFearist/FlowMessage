@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const { Connection, Request, TYPES } = require('tedious');
 const path = require('path');
+const http = require('http');
+const { Server } = require('socket.io');
 
 const app = express();
 const port = 3000;
@@ -13,6 +15,40 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+
+// Создание HTTP сервера и инициализация Socket.IO
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: corsOptions
+});
+
+let onlineUsers = new Map();
+
+io.on('connection', socket => {
+    console.log('Новое соединение');
+
+    socket.on('userConnected', userId => {
+        onlineUsers.set(userId, socket.id);
+        io.emit('onlineUsers', Array.from(onlineUsers.keys()));
+    });
+
+    socket.on('sendMessage', message => {
+        const recipientSocketId = onlineUsers.get(message.receiverId);
+        if (recipientSocketId) {
+            io.to(recipientSocketId).emit('newMessage', message);
+        }
+    });
+
+    socket.on('disconnect', () => {
+        for (const [userId, sockId] of onlineUsers.entries()) {
+            if (sockId === socket.id) {
+                onlineUsers.delete(userId);
+                break;
+            }
+        }
+        io.emit('onlineUsers', Array.from(onlineUsers.keys()));
+    });
+});
 
 const config = {
     server: 'HONEYPOT',
@@ -62,6 +98,51 @@ app.get('/api/users', (req, res) => {
 
         request.on('requestCompleted', () => {
             res.json(users);
+        });
+
+        connection.execSql(request);
+    });
+
+    connection.connect();
+});
+
+app.get('/api/users/:userId', (req, res) => {
+    const userId = parseInt(req.params.userId);
+    const connection = new Connection(config);
+
+    connection.on('connect', err => {
+        if (err) {
+            console.error('Ошибка подключения к БД:', err);
+            return res.status(500).json({ error: 'Ошибка подключения к БД' });
+        }
+
+        const request = new Request(`SELECT UserID, FirstName, LastName, ImagePath FROM Users WHERE UserID = @userId`, (err) => {
+            if (err) {
+                console.error('Ошибка получения пользователя:', err);
+                return res.status(500).json({ error: 'Ошибка получения пользователя' });
+            }
+            connection.close();
+        });
+
+        request.addParameter('userId', TYPES.Int, userId);
+
+        let user = null;
+
+        request.on('row', columns => {
+            user = {};
+            columns.forEach(column => {
+                user[column.metadata.colName] = column.value instanceof Buffer
+                    ? Array.from(column.value)
+                    : column.value;
+            });
+        });
+
+        request.on('requestCompleted', () => {
+            if (user) {
+                res.json(user);
+            } else {
+                res.status(404).json({ error: 'Пользователь не найден' });
+            }
         });
 
         connection.execSql(request);
@@ -208,7 +289,19 @@ app.get('/api/download/:fileId', (req, res) => {
     connection.connect();
 });
 
+function sendMessage(receiverId, content) {
+    const message = {
+        senderId: parseInt(currentUserId),
+        receiverId: parseInt(receiverId),
+        senderName: 'Текущий пользователь',
+        content: content,
+        sentDate: new Date().toISOString()
+    };
 
-app.listen(port, () => {
+    socket.emit('sendMessage', message);
+    displayMessages([message]);
+}
+
+server.listen(port, () => {
     console.log(`Сервер запущен на http://localhost:${port}`);
 });
