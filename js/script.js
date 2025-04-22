@@ -3,6 +3,7 @@ let currentUserId;
 document.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
     currentUserId = urlParams.get('userId');
+    const searchInput = document.getElementById('search-users');
 
     if (currentUserId) {
         console.log(`ID пользователя, переданный из WPF: ${currentUserId}`);
@@ -11,7 +12,28 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('ID пользователя не передан из WPF.');
     }
 
-    loadUsers();
+    loadUsers()
+        .then(() => {
+            if (searchInput) {
+                searchInput.addEventListener('input', (event) => {
+                    const searchText = event.target.value.toLowerCase();
+                    const userListItems = document.querySelectorAll('.user-list li');
+
+                    userListItems.forEach(item => {
+                        const userNameElement = item.querySelector('.user-name');
+                        if (userNameElement) {
+                            const userName = userNameElement.textContent.toLowerCase();
+                            item.style.display = userName.includes(searchText) ? '' : 'none';
+                        }
+                    });
+                });
+            } else {
+                console.error('Не удалось найти поле поиска с ID "search-users".');
+            }
+        })
+        .catch(error => {
+            console.error('Ошибка при загрузке пользователей:', error);
+        });
 });
 
 async function loadCurrentUser() {
@@ -64,8 +86,10 @@ async function loadUsers() {
         }
         const users = await response.json();
         displayUsers(users);
+        return Promise.resolve();
     } catch (error) {
         console.log('Ошибка при загрузке пользователей:', error);
+        return Promise.reject(error);
     }
 }
 
