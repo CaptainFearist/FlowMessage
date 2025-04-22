@@ -1,12 +1,21 @@
 let currentUserId;
+let currentChatId;
+let socket;
 
 document.addEventListener('DOMContentLoaded', () => {
+    socket = io('http://localhost:3000');
+
     const urlParams = new URLSearchParams(window.location.search);
     currentUserId = urlParams.get('userId');
     const searchInput = document.getElementById('search-users');
+    const sendButton = document.querySelector('.send--button');
+    const messageInput = document.querySelector('footer input[type="text"]');
+    const messageListContainer = document.querySelector('.message-list');
+    const chatTitleElement = document.getElementById('chat-title');
 
     if (currentUserId) {
         console.log(`ID пользователя, переданный из WPF: ${currentUserId}`);
+        socket.emit('userConnected', parseInt(currentUserId));
         loadCurrentUser();
     } else {
         console.log('ID пользователя не передан из WPF.');
@@ -34,6 +43,46 @@ document.addEventListener('DOMContentLoaded', () => {
         .catch(error => {
             console.error('Ошибка при загрузке пользователей:', error);
         });
+
+    if (sendButton) {
+        sendButton.addEventListener('click', () => {
+            const messageText = messageInput.value.trim();
+            if (messageText && currentChatId) {
+                sendMessage(currentChatId, messageText);
+                messageInput.value = '';
+            } else if (!currentChatId) {
+                console.error('Не выбран чат для отправки сообщения.');
+            }
+        });
+    } else {
+        console.error('Не найдена кнопка отправки с классом "send--button".');
+    }
+
+    if (messageInput) {
+        messageInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendButton.click();
+            }
+        });
+    } else {
+        console.error('Не найдено поле ввода сообщения в футере.');
+    }
+
+    socket.on('onlineUsers', updateOnlineStatuses);
+    socket.on('newMessage', message => {
+        if (currentChatId && parseInt(message.ChatId) === currentChatId) {
+            displayNewMessage(message, parseInt(currentUserId));
+        } else if (parseInt(message.SenderId) !== parseInt(currentUserId)) {
+            console.log('Новое сообщение в другом чате:', message);
+        }
+    });
+
+    setInterval(() => {
+        if (currentUserId) {
+            socket.emit('userConnected', parseInt(currentUserId));
+        }
+    }, 30000);
 });
 
 async function loadCurrentUser() {
@@ -169,9 +218,11 @@ function renderUserItem(user) {
 async function loadChatForUser(selectedUserId, userName) {
     const chatTitle = document.querySelector('#chat-title');
     chatTitle.textContent = `Чат с ${userName}`;
+    currentChatId = null;
 
     const messageListContainer = document.querySelector('.message-list');
     messageListContainer.innerHTML = '';
+    messageListContainer.textContent = 'Загрузка сообщений...';
 
     if (!currentUserId) {
         console.error('ID текущего пользователя не определен.');
@@ -184,8 +235,15 @@ async function loadChatForUser(selectedUserId, userName) {
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-        const messages = await response.json();
-        displayMessages(messages);
+        const chatData = await response.json();
+        if (chatData.chatId) {
+            currentChatId = chatData.chatId;
+            displayMessages(chatData.messages);
+        } else if (Array.isArray(chatData)) {
+            displayMessages(chatData);
+        } else {
+            messageListContainer.textContent = 'Чат пуст.';
+        }
     } catch (error) {
         console.error(`Ошибка при загрузке сообщений для пользователя ${userName}:`, error);
         messageListContainer.textContent = 'Не удалось загрузить сообщения.';
@@ -212,12 +270,11 @@ function displayMessages(messages) {
     messages.forEach(message => {
         const messageDiv = document.createElement('div');
         messageDiv.classList.add('message');
-
         messageDiv.classList.add(message.SenderId === numericCurrentUserId ? 'sent' : 'received');
 
         const senderInfo = document.createElement('span');
         senderInfo.classList.add('message-sender');
-        senderInfo.textContent = `${message.SenderName}: `;
+        senderInfo.textContent = `${message.FirstName} ${message.LastName}: `;
         messageDiv.appendChild(senderInfo);
 
         const messageContent = document.createElement('p');
@@ -250,26 +307,42 @@ function displayMessages(messages) {
     messageListContainer.scrollTop = messageListContainer.scrollHeight;
 }
 
-const socket = io('http://localhost:3000');
+function sendMessage(chatId, content) {
+    const message = {
+        chatId: chatId,
+        senderId: parseInt(currentUserId),
+        content: content,
+        sentDate: new Date().toISOString()
+    };
+    socket.emit('sendMessage', message);
+}
 
-document.addEventListener('DOMContentLoaded', () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    currentUserId = urlParams.get('userId');
-    if (currentUserId) {
-        socket.emit('userConnected', parseInt(currentUserId));
+function displayNewMessage(message, currentUserId) {
+    const messageListContainer = document.querySelector('.message-list');
+    if (messageListContainer) {
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message');
+        messageDiv.classList.add(message.SenderId === currentUserId ? 'sent' : 'received');
+
+        const senderInfo = document.createElement('span');
+        senderInfo.classList.add('message-sender');
+        senderInfo.textContent = `${message.FirstName} ${message.LastName}: `;
+        messageDiv.appendChild(senderInfo);
+
+        const messageContent = document.createElement('p');
+        messageContent.classList.add('message-content');
+        messageContent.textContent = message.Content;
+
+        const timeStamp = document.createElement('span');
+        timeStamp.classList.add('message-timestamp');
+        timeStamp.textContent = new Date(message.SentDate).toLocaleString();
+
+        messageDiv.appendChild(messageContent);
+        messageDiv.appendChild(timeStamp);
+        messageListContainer.appendChild(messageDiv);
+        messageListContainer.scrollTop = messageListContainer.scrollHeight;
     }
-
-    socket.on('onlineUsers', updateOnlineStatuses);
-    socket.on('newMessage', message => {
-        if (parseInt(message.senderId) !== parseInt(currentUserId)) {
-            loadChatForUser(message.senderId, message.senderName);
-        }
-    });
-
-    setInterval(() => {
-        socket.emit('userConnected', parseInt(currentUserId));
-    }, 30000);
-});
+}
 
 function updateOnlineStatuses(onlineUserIds) {
     document.querySelectorAll('.user-item').forEach(li => {
