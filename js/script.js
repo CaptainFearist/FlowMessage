@@ -34,7 +34,7 @@ function displayCurrentUser(user) {
     const currentUserNameSpan = document.querySelector('.current-user-name');
 
     if (currentUserAvatarContainer && currentUserNameSpan) {
-        currentUserAvatarContainer.innerHTML = ''; // Очищаем предыдущее содержимое
+        currentUserAvatarContainer.innerHTML = '';
 
         if (user.ImagePath && user.ImagePath.length > 0) {
             const byteArray = new Uint8Array(user.ImagePath);
@@ -85,7 +85,6 @@ function displayUsers(users) {
     });
 }
 
-
 function getImageMimeType(bytes) {
     if (!bytes || bytes.length < 4) return null;
     const hex = bytes.slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
@@ -103,7 +102,7 @@ function getImageMimeType(bytes) {
 function renderUserItem(user) {
     const li = document.createElement("li");
     li.classList.add("user-item");
-    li.id = `user-${user.UserID}`; // Добавляем ID для поиска элемента
+    li.id = `user-${user.UserID}`;
 
     const avatarContainer = document.createElement("div");
     avatarContainer.classList.add("user-avatar");
@@ -246,7 +245,6 @@ document.addEventListener('DOMContentLoaded', () => {
         socket.emit('userConnected', parseInt(currentUserId));
     }, 30000);
 });
-
 
 function updateOnlineStatuses(onlineUserIds) {
     document.querySelectorAll('.user-item').forEach(li => {
