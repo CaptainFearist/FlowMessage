@@ -6,12 +6,55 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (currentUserId) {
         console.log(`ID пользователя, переданный из WPF: ${currentUserId}`);
+        loadCurrentUser();
     } else {
         console.log('ID пользователя не передан из WPF.');
     }
 
     loadUsers();
 });
+
+async function loadCurrentUser() {
+    if (currentUserId) {
+        try {
+            const response = await fetch(`http://localhost:3000/api/users/${currentUserId}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const currentUser = await response.json();
+            displayCurrentUser(currentUser);
+        } catch (error) {
+            console.error('Ошибка при загрузке данных текущего пользователя:', error);
+        }
+    }
+}
+
+function displayCurrentUser(user) {
+    const currentUserAvatarContainer = document.querySelector('.current-user-avatar');
+    const currentUserNameSpan = document.querySelector('.current-user-name');
+
+    if (currentUserAvatarContainer && currentUserNameSpan) {
+        currentUserAvatarContainer.innerHTML = ''; // Очищаем предыдущее содержимое
+
+        if (user.ImagePath && user.ImagePath.length > 0) {
+            const byteArray = new Uint8Array(user.ImagePath);
+            const mimeType = getImageMimeType(byteArray);
+            const blob = new Blob([byteArray], { type: mimeType });
+            const reader = new FileReader();
+            reader.onloadend = function () {
+                const img = document.createElement("img");
+                img.src = reader.result;
+                img.alt = `${user.FirstName} ${user.LastName}`;
+                currentUserAvatarContainer.appendChild(img);
+            };
+            reader.readAsDataURL(blob);
+        } else {
+            currentUserAvatarContainer.textContent = user.FirstName.charAt(0).toUpperCase() + user.LastName.charAt(0).toUpperCase();
+            currentUserAvatarContainer.classList.add("default-avatar");
+        }
+        currentUserNameSpan.textContent = `${user.FirstName} ${user.LastName}`;
+    }
+}
 
 async function loadUsers() {
     try {
@@ -34,47 +77,14 @@ function displayUsers(users) {
     const otherUsers = users.filter(user => user.UserID !== numericCurrentUserId);
 
     otherUsers.forEach(user => {
-        const listItem = document.createElement('li');
-        listItem.classList.add('user-item');
-
-        const avatar = document.createElement('div');
-        avatar.classList.add('user-avatar');
-
-        if (user.ImagePath && user.ImagePath.length > 0) {
-            const mimeType = getImageMimeType(user.ImagePath);
-
-            if (mimeType) {
-                const uint8Array = new Uint8Array(user.ImagePath);
-                const blob = new Blob([uint8Array], { type: mimeType });
-                const reader = new FileReader();
-
-                reader.onloadend = function () {
-                    avatar.style.backgroundImage = `url(${reader.result})`;
-                };
-
-                reader.readAsDataURL(blob);
-            } else {
-                avatar.textContent = user.FirstName.charAt(0) + user.LastName.charAt(0);
-                avatar.classList.add('default-avatar');
-            }
-        } else {
-            avatar.textContent = user.FirstName.charAt(0) + user.LastName.charAt(0);
-            avatar.classList.add('default-avatar');
-        }
-
-        const userInfo = document.createElement('div');
-        userInfo.classList.add('user-info');
-        userInfo.textContent = `${user.FirstName} ${user.LastName}`;
-
-        listItem.appendChild(avatar);
-        listItem.appendChild(userInfo);
-        userList.appendChild(listItem);
-
+        const listItem = renderUserItem(user);
         listItem.addEventListener('click', () => {
             loadChatForUser(user.UserID, `${user.FirstName} ${user.LastName}`);
         });
+        userList.appendChild(listItem);
     });
 }
+
 
 function getImageMimeType(bytes) {
     if (!bytes || bytes.length < 4) return null;
@@ -93,34 +103,41 @@ function getImageMimeType(bytes) {
 function renderUserItem(user) {
     const li = document.createElement("li");
     li.classList.add("user-item");
+    li.id = `user-${user.UserID}`; // Добавляем ID для поиска элемента
 
-    const avatar = document.createElement("div");
-    avatar.classList.add("user-avatar");
-    avatar.id = `avatar-${user.UserID}`;
+    const avatarContainer = document.createElement("div");
+    avatarContainer.classList.add("user-avatar");
+    avatarContainer.id = `avatar-${user.UserID}`;
 
     if (user.ImagePath && user.ImagePath.length > 0) {
-        const mimeType = getImageMimeType(user.ImagePath);
         const byteArray = new Uint8Array(user.ImagePath);
+        const mimeType = getImageMimeType(byteArray);
         const blob = new Blob([byteArray], { type: mimeType });
 
         const reader = new FileReader();
         reader.onloadend = function () {
-            avatar.style.backgroundImage = `url(${reader.result})`;
-            avatar.style.backgroundSize = "cover";
-            avatar.style.backgroundPosition = "center";
-            avatar.textContent = "";
+            const img = document.createElement("img");
+            img.src = reader.result;
+            img.alt = `${user.FirstName} ${user.LastName}`;
+            avatarContainer.appendChild(img);
         };
         reader.readAsDataURL(blob);
     } else {
-        avatar.textContent = user.FirstName.charAt(0).toUpperCase() + user.LastName.charAt(0).toUpperCase();
+        avatarContainer.textContent = user.FirstName.charAt(0).toUpperCase() + user.LastName.charAt(0).toUpperCase();
+        avatarContainer.classList.add("default-avatar");
     }
 
     const nameSpan = document.createElement("span");
     nameSpan.classList.add("user-name");
     nameSpan.textContent = `${user.FirstName} ${user.LastName}`;
 
-    li.appendChild(avatar);
+    const statusIndicator = document.createElement("span");
+    statusIndicator.classList.add("status-indicator");
+    statusIndicator.classList.add(user.IsOnline ? "online" : "offline");
+
+    li.appendChild(avatarContainer);
     li.appendChild(nameSpan);
+    li.appendChild(statusIndicator);
 
     return li;
 }
@@ -207,4 +224,43 @@ function displayMessages(messages) {
     });
 
     messageListContainer.scrollTop = messageListContainer.scrollHeight;
+}
+
+const socket = io('http://localhost:3000');
+
+document.addEventListener('DOMContentLoaded', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    currentUserId = urlParams.get('userId');
+    if (currentUserId) {
+        socket.emit('userConnected', parseInt(currentUserId));
+    }
+
+    socket.on('onlineUsers', updateOnlineStatuses);
+    socket.on('newMessage', message => {
+        if (parseInt(message.senderId) !== parseInt(currentUserId)) {
+            loadChatForUser(message.senderId, message.senderName);
+        }
+    });
+
+    setInterval(() => {
+        socket.emit('userConnected', parseInt(currentUserId));
+    }, 30000);
+});
+
+
+function updateOnlineStatuses(onlineUserIds) {
+    document.querySelectorAll('.user-item').forEach(li => {
+        const userId = parseInt(li.id.replace('user-', ''));
+        const statusIndicator = li.querySelector('.status-indicator');
+
+        if (statusIndicator) {
+            if (onlineUserIds.includes(userId)) {
+                statusIndicator.classList.remove('offline');
+                statusIndicator.classList.add('online');
+            } else {
+                statusIndicator.classList.remove('online');
+                statusIndicator.classList.add('offline');
+            }
+        }
+    });
 }
