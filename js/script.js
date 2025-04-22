@@ -157,6 +157,7 @@ function renderUserItem(user) {
     const statusIndicator = document.createElement("span");
     statusIndicator.classList.add("status-indicator");
     statusIndicator.classList.add(user.IsOnline ? "online" : "offline");
+    statusIndicator.title = user.IsOnline ? "В сети" : "Не в сети";
 
     li.appendChild(avatarContainer);
     li.appendChild(nameSpan);
@@ -279,9 +280,11 @@ function updateOnlineStatuses(onlineUserIds) {
             if (onlineUserIds.includes(userId)) {
                 statusIndicator.classList.remove('offline');
                 statusIndicator.classList.add('online');
+                statusIndicator.title = 'В сети';
             } else {
                 statusIndicator.classList.remove('online');
                 statusIndicator.classList.add('offline');
+                statusIndicator.title ='Не в сети';
             }
         }
     });
