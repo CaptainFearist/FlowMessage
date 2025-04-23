@@ -391,14 +391,96 @@ header span {
 }
 
 footer {
-    display: flex;
-    align-items: center;
     min-height: 100px;
     background: #DAD7CD;
     border-radius: 35px 35px 0 0;
-    padding: 10px 20px;
+    padding: 30px 20px;
     box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    transition: min-height 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+}
+
+#file-preview-space {
+    opacity: 0;
+    order: 1;
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    right: 20px;
+    transform: translateY(10px);
+    animation: gentleAppear 0.5s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes gentleAppear {
+    0% {
+        opacity: 0;
+        transform: translateY(-15px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes gentleDisappear {
+    0% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(-15px);
+    }
+}
+
+#file-preview {
+    background: #f0f0f0;
+    border-radius: 20px;
+    padding: 10px 15px;
+    display: flex;
+    align-items: center;
+    max-width: 600px;
+    margin: 0 auto;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+#file-name {
+    flex-grow: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-right: 10px;
+}
+
+#remove-file {
+    background: none;
+    border: none;
+    color: #ff0000;
+    cursor: pointer;
+    font-size: 14px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#remove-file:hover {
+    background-color: rgba(255, 0, 0, 0.1);
+}
+
+.input-group {
+    display: flex;
     gap: 10px;
+    width: 100%;
+    margin: 0 auto;
+    position: relative;
+    bottom: 0;
+    transition: none !important;
 }
 
 footer input[type="text"] {
@@ -424,22 +506,6 @@ footer input[type="text"]::placeholder {
     font-size: 14px;
 }
 
-footer button {
-    background: #7F9A6F;
-    color: #2D3142;
-    border: 1px solid #588157;
-    padding: 10px 15px;
-    font-family: Jura, serif;
-    font-size: 16px;
-    cursor: pointer;
-    transition: all 500ms ease;
-}
-
-footer button:hover {
-    background: #6c8360;
-    transform: scale(1.04)
-}
-
 .attach--button {
     border-radius: 50%;
     width: 40px;
@@ -451,19 +517,29 @@ footer button:hover {
     background-size: 25px 25px;
     transition: transform 500ms ease, background-color 500ms ease;
     image-rendering: crisp-edges;
+    border: 1px solid #588157;
 }
 
 .attach--button:hover {
     background-color: #6c8360;
-    background-image: url('/img/attachFile.png');
-    background-repeat: no-repeat;
-    background-position: center;
-    background-size: 25px 25px;
     transform: scale(1.04);
 }
 
 .send--button {
-    border-radius: 5px;
+    border-radius: 15px;
     min-height: 40px;
     min-width: 40px;
+    background: #7F9A6F;
+    color: #2D3142;
+    border: 1px solid #588157;
+    padding: 10px 15px;
+    font-family: Jura, serif;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 500ms ease;
+}
+
+.send--button:hover {
+    background: #6c8360;
+    transform: scale(1.04);
 }
