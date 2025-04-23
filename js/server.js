@@ -4,6 +4,8 @@ const { Connection, Request, TYPES } = require('tedious');
 const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() });
 
 const app = express();
 const port = 3000;
@@ -35,38 +37,19 @@ io.on('connection', socket => {
 
     socket.on('sendMessage', async (message) => {
         try {
-            const messageId = await saveMessageToDatabase(message.chatId, message.senderId, message.content);
-
-            const senderNameResult = await executeQuery(
-                `SELECT FirstName, LastName FROM Users WHERE UserID = @senderId`,
-                [{ name: 'senderId', type: TYPES.Int, value: message.senderId }]
-            );
-            
-            const firstName = senderNameResult[0]?.FirstName || '';
-            const lastName = senderNameResult[0]?.LastName || '';
-            
-            const messageToSend = {
-                MessageId: messageId,
-                ChatId: message.chatId,
-                SenderId: message.senderId,
-                FirstName: firstName,
-                LastName: lastName,
-                Content: message.content,
-                SentDate: message.sentDate
-            };
-        
-            const chatParticipantsResult = await executeQuery(`
-                SELECT UserId FROM ChatParticipants WHERE ChatId = @chatId
-            `, [{ name: 'chatId', type: TYPES.Int, value: message.chatId }]);
-
-            chatParticipantsResult.forEach(participant => {
-                const recipientSocketId = onlineUsers.get(participant.UserId);
-                if (recipientSocketId) {
-                    io.to(recipientSocketId).emit('newMessage', messageToSend);
-                }
+            const response = await fetch('http://localhost:3000/api/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(message)
             });
+            
+            if (!response.ok) {
+                throw new Error('Failed to send message');
+            }
         } catch (error) {
-            console.error('Ошибка при обработке sendMessage:', error);
+            console.error('Error sending message:', error);
         }
     });
 
@@ -79,6 +62,106 @@ io.on('connection', socket => {
         }
         io.emit('onlineUsers', Array.from(onlineUsers.keys()));
     });
+});
+
+app.post('/api/messages', upload.single('file'), async (req, res) => {
+    const { chatId, senderId, content } = req.body;
+    const fileSize = req.body.fileSize;
+    const file = req.file;
+
+    try {
+        const messageSql = `
+            INSERT INTO Messages (ChatId, SenderId, Content, SentDate)
+            OUTPUT INSERTED.MessageId
+            VALUES (@chatId, @senderId, @content, GETDATE());
+        `;
+        const messageResult = await executeQuery(messageSql, [
+            { name: 'chatId', type: TYPES.Int, value: chatId },
+            { name: 'senderId', type: TYPES.Int, value: senderId },
+            { name: 'content', type: TYPES.NVarChar, value: content }
+        ]);
+        const messageId = messageResult[0].MessageId;
+
+        let fileId = null;
+        if (file) {
+            const fileExtension = path.extname(file.originalname).toLowerCase().substring(1);
+            const fileTypeResult = await executeQuery(
+                `SELECT FileTypeId FROM FileTypes WHERE FileTypeName = @fileTypeName`,
+                [{ name: 'fileTypeName', type: TYPES.NVarChar, value: fileExtension }]
+            );
+
+            let fileTypeId;
+            if (fileTypeResult.length > 0) {
+                fileTypeId = fileTypeResult[0].FileTypeId;
+            } else {
+                const newFileTypeResult = await executeQuery(
+                    `INSERT INTO FileTypes (FileTypeName) OUTPUT INSERTED.FileTypeId VALUES (@fileTypeName)`,
+                    [{ name: 'fileTypeName', type: TYPES.NVarChar, value: fileExtension }]
+                );
+                fileTypeId = newFileTypeResult[0].FileTypeId;
+            }
+
+            const fileSql = `
+                INSERT INTO Files (FileName, FileContent, FileTypeId, UploadDate, UserId, FileSize)
+                OUTPUT INSERTED.FileId
+                VALUES (@fileName, @fileContent, @fileTypeId, GETDATE(), @userId, @fileSize);
+            `;
+            const fileResult = await executeQuery(fileSql, [
+                { name: 'fileName', type: TYPES.NVarChar, value: file.originalname },
+                { name: 'fileContent', type: TYPES.VarBinary, value: file.buffer },
+                { name: 'fileTypeId', type: TYPES.Int, value: fileTypeId },
+                { name: 'userId', type: TYPES.Int, value: senderId },
+                { name: 'fileSize', type: TYPES.BigInt, value: fileSize ? parseInt(fileSize) : null }
+            ]);
+            fileId = fileResult[0].FileId;
+
+            await executeQuery(
+                `INSERT INTO ChatAttachments (MessageId, FileId) VALUES (@messageId, @fileId)`,
+                [
+                    { name: 'messageId', type: TYPES.Int, value: messageId },
+                    { name: 'fileId', type: TYPES.Int, value: fileId }
+                ]
+            );
+        }
+
+        const senderResult = await executeQuery(
+            `SELECT FirstName, LastName FROM Users WHERE UserID = @senderId`,
+            [{ name: 'senderId', type: TYPES.Int, value: senderId }]
+        );
+        const firstName = senderResult[0]?.FirstName || '';
+        const lastName = senderResult[0]?.LastName || '';
+
+        const responseData = {
+            MessageId: messageId,
+            ChatId: chatId,
+            SenderId: senderId,
+            FirstName: firstName,
+            LastName: lastName,
+            Content: content,
+            SentDate: new Date().toISOString(),
+            Attachments: fileId ? [{
+                FileId: fileId,
+                FileName: file.originalname
+            }] : []
+        };
+
+        const chatParticipants = await executeQuery(
+            `SELECT UserId FROM ChatParticipants WHERE ChatId = @chatId`,
+            [{ name: 'chatId', type: TYPES.Int, value: chatId }]
+        );
+
+        chatParticipants.forEach(participant => {
+            const recipientSocketId = onlineUsers.get(participant.UserId);
+            if (recipientSocketId) {
+                io.to(recipientSocketId).emit('newMessage', responseData);
+            }
+        });
+
+        res.status(201).json(responseData);
+    } catch (error) {
+        console.error('Ошибка при сохранении сообщения:', error);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
 });
 
 const config = {
@@ -212,15 +295,54 @@ async function saveMessageToDatabase(chatId, senderId, content) {
 
 async function fetchMessages(chatId) {
     const sql = `
-        SELECT m.MessageId, m.ChatId, m.SenderId, m.Content, m.SentDate, u.FirstName, u.LastName
+        SELECT 
+            m.MessageId, 
+            m.ChatId, 
+            m.SenderId, 
+            m.Content, 
+            m.SentDate, 
+            u.FirstName, 
+            u.LastName,
+            ca.ChatAttachmentId,
+            f.FileId,
+            f.FileName
         FROM Messages m
         JOIN Users u ON m.SenderId = u.UserID
+        LEFT JOIN ChatAttachments ca ON m.MessageId = ca.MessageId
+        LEFT JOIN Files f ON ca.FileId = f.FileId
         WHERE m.ChatId = @chatId
         ORDER BY m.SentDate;
     `;
-    return executeQuery(sql, [
+    
+    const rows = await executeQuery(sql, [
         { name: 'chatId', type: TYPES.Int, value: chatId }
     ]);
+    
+    const messagesMap = new Map();
+    
+    rows.forEach(row => {
+        if (!messagesMap.has(row.MessageId)) {
+            messagesMap.set(row.MessageId, {
+                MessageId: row.MessageId,
+                ChatId: row.ChatId,
+                SenderId: row.SenderId,
+                Content: row.Content,
+                SentDate: row.SentDate,
+                FirstName: row.FirstName,
+                LastName: row.LastName,
+                Attachments: []
+            });
+        }
+        
+        if (row.FileId) {
+            messagesMap.get(row.MessageId).Attachments.push({
+                FileId: row.FileId,
+                FileName: row.FileName
+            });
+        }
+    });
+    
+    return Array.from(messagesMap.values());
 }
 
 app.get('/api/users', (req, res) => {
@@ -322,6 +444,28 @@ app.get('/api/chats/:selectedUserId', async (req, res) => {
     } catch (error) {
         console.error('Ошибка при получении или создании чата:', error);
         res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+
+app.get('/api/files/:fileId', async (req, res) => {
+    const fileId = req.params.fileId;
+    
+    try {
+        const result = await executeQuery(
+            `SELECT FileName, FileContent FROM Files WHERE FileId = @fileId`,
+            [{ name: 'fileId', type: TYPES.Int, value: fileId }]
+        );
+        
+        if (result.length === 0) {
+            return res.status(404).send('File not found');
+        }
+        
+        const file = result[0];
+        res.setHeader('Content-Disposition', `attachment; filename="${file.FileName}"`);
+        res.send(file.FileContent);
+    } catch (error) {
+        console.error('Error downloading file:', error);
+        res.status(500).send('Server error');
     }
 });
 
