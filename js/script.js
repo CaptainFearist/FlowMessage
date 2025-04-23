@@ -1,6 +1,27 @@
 let currentUserId;
 let currentChatId;
 let socket;
+let isAnimating = false;
+
+function resetFilePreview() {
+    console.log('resetFilePreview: isAnimating:', isAnimating);
+    if (isAnimating) return;
+
+    isAnimating = true;
+    const preview = document.getElementById('file-preview-space');
+    preview.style.animation = 'gentleDisappear 0.5s forwards';
+
+    setTimeout(() => {
+        const fileInput = document.getElementById('file-input');
+        if (fileInput) fileInput.value = '';
+        preview.style.display = 'none';
+        preview.style.opacity = '';
+        preview.style.animation = '';
+        document.querySelector('footer').style.minHeight = '100px';
+        isAnimating = false;
+        console.log('resetFilePreview setTimeout: isAnimating:', isAnimating);
+    }, 500);
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     socket = io('http://localhost:3000');
@@ -12,6 +33,55 @@ document.addEventListener('DOMContentLoaded', () => {
     const messageInput = document.querySelector('footer input[type="text"]');
     const messageListContainer = document.querySelector('.message-list');
     const chatTitleElement = document.getElementById('chat-title');
+
+    document.getElementById('attach-button').addEventListener('click', () => {
+        document.getElementById('file-input').click();
+    });
+    
+    document.getElementById('file-input').addEventListener('change', (e) => {
+        const preview = document.getElementById('file-preview-space');
+        const fileNameElement = document.getElementById('file-name');
+
+        if (!e.target.files.length) {
+            preview.style.display = 'none';
+            document.querySelector('footer').style.minHeight = '100px';
+            return;
+        }
+
+        const file = e.target.files[0];
+
+        preview.style.display = 'block';
+        preview.style.opacity = '0';
+        preview.style.animation = 'none';
+        void preview.offsetWidth;
+        preview.style.animation = 'gentleAppear 0.5s forwards';
+        preview.style.opacity = '1'; 
+
+        document.querySelector('footer').style.minHeight = '150px';
+        fileNameElement.textContent = file.name;
+
+        console.log('change: isAnimating:', isAnimating);
+    });
+
+    document.getElementById('remove-file').addEventListener('click', (e) => {
+        e.preventDefault();
+        console.log('remove-file: isAnimating:', isAnimating);
+        if (isAnimating) return;
+
+        isAnimating = true;
+        const preview = document.getElementById('file-preview-space');
+        preview.style.animation = 'gentleDisappear 0.5s forwards';
+
+        setTimeout(() => {
+            document.getElementById('file-input').value = '';
+            preview.style.display = 'none';
+            preview.style.opacity = '';
+            preview.style.animation = '';
+            document.querySelector('footer').style.minHeight = '100px';
+            isAnimating = false;
+            console.log('remove-file setTimeout: isAnimating:', isAnimating);
+        }, 500);
+    });
 
     if (currentUserId) {
         console.log(`ID пользователя, переданный из WPF: ${currentUserId}`);
@@ -44,19 +114,23 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Ошибка при загрузке пользователей:', error);
         });
 
-    if (sendButton) {
-        sendButton.addEventListener('click', () => {
-            const messageText = messageInput.value.trim();
-            if (messageText && currentChatId) {
-                sendMessage(currentChatId, messageText);
-                messageInput.value = '';
-            } else if (!currentChatId) {
-                console.error('Не выбран чат для отправки сообщения.');
-            }
-        });
-    } else {
-        console.error('Не найдена кнопка отправки с классом "send--button".');
-    }
+        if (sendButton) {
+            sendButton.addEventListener('click', () => {
+                const messageText = messageInput.value.trim();
+                const fileInput = document.getElementById('file-input');
+                
+                if ((messageText || (fileInput && fileInput.files.length > 0)) && currentChatId) {
+                    sendMessage(currentChatId, messageText);
+                    messageInput.value = '';
+                    
+                    if (fileInput.files.length > 0) {
+                        resetFilePreview();
+                    }
+                } else if (!currentChatId) {
+                    console.error('Не выбран чат для отправки сообщения.');
+                }
+            });
+        }
 
     if (messageInput) {
         messageInput.addEventListener('keypress', (event) => {
@@ -72,7 +146,11 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('onlineUsers', updateOnlineStatuses);
     socket.on('newMessage', message => {
         if (currentChatId && parseInt(message.ChatId) === currentChatId) {
-            displayNewMessage(message, parseInt(currentUserId));
+            if (parseInt(message.SenderId) !== parseInt(currentUserId)) {
+                displayNewMessage(message, parseInt(currentUserId));
+            } else {
+                console.log('Получено собственное сообщение через WebSocket, игнорируем.');
+            }
         } else if (parseInt(message.SenderId) !== parseInt(currentUserId)) {
             console.log('Новое сообщение в другом чате:', message);
         }
@@ -272,6 +350,15 @@ function displayMessages(messages) {
         messageDiv.classList.add('message');
         messageDiv.classList.add(message.SenderId === numericCurrentUserId ? 'sent' : 'received');
 
+        // Для отправки с текущего юзера без своего Имени и Фамилии
+
+        // if (message.SenderId !== numericCurrentUserId) {
+        //     const senderInfo = document.createElement('span');
+        //     senderInfo.classList.add('message-sender');
+        //     senderInfo.textContent = `${message.FirstName} ${message.LastName}: `;
+        //     messageDiv.appendChild(senderInfo);
+        // }
+
         const senderInfo = document.createElement('span');
         senderInfo.classList.add('message-sender');
         senderInfo.textContent = `${message.FirstName} ${message.LastName}: `;
@@ -282,23 +369,25 @@ function displayMessages(messages) {
         messageContent.textContent = message.Content;
         messageDiv.appendChild(messageContent);
 
-        if (message.FileId && message.FileName) {
-            const attachmentDiv = document.createElement('div');
-            attachmentDiv.classList.add('attachment-info');
-
-            const downloadLink = document.createElement('a');
-            downloadLink.href = `http://localhost:3000/api/download/${message.FileId}`;
-            downloadLink.textContent = message.FileName;
-            downloadLink.download = message.FileName;
-
-            attachmentDiv.textContent = 'Вложение: ';
-            attachmentDiv.appendChild(downloadLink);
-            messageDiv.appendChild(attachmentDiv);
+        if (message.Attachments && message.Attachments.length > 0) {
+            message.Attachments.forEach(attachment => {
+                const attachmentDiv = document.createElement('div');
+                attachmentDiv.classList.add('attachment-info');
+                
+                const downloadLink = document.createElement('a');
+                downloadLink.href = `http://localhost:3000/api/files/${attachment.FileId}`;
+                downloadLink.textContent = attachment.FileName;
+                downloadLink.download = attachment.FileName;
+                
+                attachmentDiv.textContent = 'Вложение: ';
+                attachmentDiv.appendChild(downloadLink);
+                messageDiv.appendChild(attachmentDiv);
+            });
         }
 
         const timeStamp = document.createElement('span');
         timeStamp.classList.add('message-timestamp');
-        timeStamp.textContent = new Date(message.SentDate).toLocaleString();
+        timeStamp.textContent = new Date(message.SentDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         messageDiv.appendChild(timeStamp);
 
         messageListContainer.appendChild(messageDiv);
@@ -307,14 +396,94 @@ function displayMessages(messages) {
     messageListContainer.scrollTop = messageListContainer.scrollHeight;
 }
 
-function sendMessage(chatId, content) {
-    const message = {
-        chatId: chatId,
-        senderId: parseInt(currentUserId),
-        content: content,
-        sentDate: new Date().toISOString()
-    };
-    socket.emit('sendMessage', message);
+
+async function sendMessage(chatId, content) {
+    const fileInput = document.getElementById('file-input');
+    const formData = new FormData();
+
+    formData.append('chatId', chatId);
+    formData.append('senderId', currentUserId);
+    formData.append('content', content);
+
+    if (fileInput.files[0]) {
+        const file = fileInput.files[0];
+        formData.append('file', file);
+        formData.append('fileSize', file.size);
+    }
+
+    try {
+        const tempMessage = {
+            MessageId: Date.now(),
+            ChatId: chatId,
+            SenderId: parseInt(currentUserId),
+            FirstName: document.querySelector('.current-user-name').textContent.split(' ')[0],
+            LastName: document.querySelector('.current-user-name').textContent.split(' ')[1],
+            Content: content,
+            SentDate: new Date().toISOString(),
+            Attachments: fileInput.files[0] ? [{
+                FileId: 'temp',
+                FileName: fileInput.files[0].name
+            }] : []
+        };
+
+        displayNewMessage(tempMessage, parseInt(currentUserId));
+
+        const response = await fetch('http://localhost:3000/api/messages', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (response.ok) {
+            document.getElementById('message-input').value = '';
+            fileInput.value = '';
+            resetFilePreview();
+
+            const realMessage = await response.json();
+            const tempMsgId = tempMessage.MessageId;
+
+            const tempMsgElement = document.querySelector(`[data-message-id="${tempMsgId}"]`);
+            if (tempMsgElement) {
+                tempMsgElement.setAttribute('data-message-id', realMessage.MessageId);
+                tempMsgElement.querySelector('.message-content').textContent = realMessage.Content;
+
+                const attachmentContainer = tempMsgElement.querySelector('.attachment-info');
+                if (realMessage.Attachments && realMessage.Attachments.length > 0) {
+                    if (attachmentContainer) {
+                        attachmentContainer.innerHTML = '';
+                        realMessage.Attachments.forEach(attachment => {
+                            const downloadLink = document.createElement('a');
+                            downloadLink.href = `http://localhost:3000/api/files/${attachment.FileId}`;
+                            downloadLink.textContent = attachment.FileName;
+                            downloadLink.download = attachment.FileName;
+                            attachmentContainer.appendChild(document.createTextNode('Вложение: '));
+                            attachmentContainer.appendChild(downloadLink);
+                        });
+                    } else {
+                        const newAttachmentDiv = document.createElement('div');
+                        newAttachmentDiv.classList.add('attachment-info');
+                        realMessage.Attachments.forEach(attachment => {
+                            const downloadLink = document.createElement('a');
+                            downloadLink.href = `http://localhost:3000/api/files/${attachment.FileId}`;
+                            downloadLink.textContent = attachment.FileName;
+                            downloadLink.download = attachment.FileName;
+                            newAttachmentDiv.appendChild(document.createTextNode('Вложение: '));
+                            newAttachmentDiv.appendChild(downloadLink);
+                        });
+                        tempMsgElement.appendChild(newAttachmentDiv);
+                    }
+                } else if (attachmentContainer) {
+                    attachmentContainer.remove();
+                }
+
+                const timeStampElement = tempMsgElement.querySelector('.message-timestamp');
+                if (timeStampElement && realMessage.SentDate) {
+                    timeStampElement.textContent = new Date(realMessage.SentDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+    }
 }
 
 function displayNewMessage(message, currentUserId) {
@@ -324,6 +493,15 @@ function displayNewMessage(message, currentUserId) {
         messageDiv.classList.add('message');
         messageDiv.classList.add(message.SenderId === currentUserId ? 'sent' : 'received');
 
+        // Для отправки с текущего юзера без своего Имени и Фамилии
+
+        // if (message.SenderId !== currentUserId) {
+        //     const senderInfo = document.createElement('span');
+        //     senderInfo.classList.add('message-sender');
+        //     senderInfo.textContent = `${message.FirstName} ${message.LastName}: `;
+        //     messageDiv.appendChild(senderInfo);
+        // }
+
         const senderInfo = document.createElement('span');
         senderInfo.classList.add('message-sender');
         senderInfo.textContent = `${message.FirstName} ${message.LastName}: `;
@@ -332,13 +510,29 @@ function displayNewMessage(message, currentUserId) {
         const messageContent = document.createElement('p');
         messageContent.classList.add('message-content');
         messageContent.textContent = message.Content;
+        messageDiv.appendChild(messageContent);
+
+        if (message.Attachments && message.Attachments.length > 0) {
+            message.Attachments.forEach(attachment => {
+                const attachmentDiv = document.createElement('div');
+                attachmentDiv.classList.add('attachment-info');
+                
+                const downloadLink = document.createElement('a');
+                downloadLink.href = `http://localhost:3000/api/files/${attachment.FileId}`;
+                downloadLink.textContent = attachment.FileName;
+                downloadLink.download = attachment.FileName;
+                
+                attachmentDiv.textContent = 'Вложение: ';
+                attachmentDiv.appendChild(downloadLink);
+                messageDiv.appendChild(attachmentDiv);
+            });
+        }
 
         const timeStamp = document.createElement('span');
         timeStamp.classList.add('message-timestamp');
-        timeStamp.textContent = new Date(message.SentDate).toLocaleString();
-
-        messageDiv.appendChild(messageContent);
+        timeStamp.textContent = new Date(message.SentDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         messageDiv.appendChild(timeStamp);
+
         messageListContainer.appendChild(messageDiv);
         messageListContainer.scrollTop = messageListContainer.scrollHeight;
     }
