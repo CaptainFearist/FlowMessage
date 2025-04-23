@@ -47,9 +47,19 @@
     </div>
 
     <footer>
-        <input type="text" placeholder="Введите сообщение...">
-        <button class="attach--button"></button>
-        <button class="send--button">Отправить</button>
+        <div id="file-preview-space" style="display: none;">
+            <div id="file-preview">
+                <span id="file-name"></span>
+                <button id="remove-file">×</button>
+            </div>
+        </div>
+        
+        <div class="input-group">
+            <input type="text" placeholder="Введите сообщение..." id="message-input">
+            <input type="file" id="file-input" style="display: none;">
+            <button class="attach--button" id="attach-button"></button>
+            <button class="send--button" id="send-button">Отправить</button>
+        </div>
     </footer>
 </body>
 </html>
