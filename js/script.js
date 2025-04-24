@@ -328,6 +328,29 @@ async function loadChatForUser(selectedUserId, userName) {
     }
 }
 
+function downloadFile(fileUrl, fileName) {
+    fetch(fileUrl)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Скачивание не удалось');
+            }
+            return response.blob();
+        })
+        .then(blob => {
+            const a = document.createElement('a');
+            const url = window.URL.createObjectURL(blob);
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        })
+        .catch(error => {
+            console.error('Ошибка при скачивании файла:', error);
+        });
+}
+
 function displayMessages(messages) {
     const messageListContainer = document.querySelector('.message-list');
     messageListContainer.innerHTML = '';
@@ -373,14 +396,47 @@ function displayMessages(messages) {
             message.Attachments.forEach(attachment => {
                 const attachmentDiv = document.createElement('div');
                 attachmentDiv.classList.add('attachment-info');
-                
-                const downloadLink = document.createElement('a');
-                downloadLink.href = `http://localhost:3000/api/files/${attachment.FileId}`;
-                downloadLink.textContent = attachment.FileName;
-                downloadLink.download = attachment.FileName;
-                
-                attachmentDiv.textContent = 'Вложение: ';
-                attachmentDiv.appendChild(downloadLink);
+
+                const fileName = attachment.FileName.toLowerCase();
+                const isImage = fileName.endsWith('.png') || fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.gif') || fileName.endsWith('.webp');
+
+                let fileUrl = attachment.TempPreviewUrl || `http://localhost:3000/api/files/${attachment.FileId}`;
+
+                if (isImage) {
+                    const img = document.createElement('img');
+                    img.src = fileUrl;
+                    img.alt = attachment.FileName;
+                    img.style.maxWidth = '200px';
+                    img.style.borderRadius = '10px';
+                    img.style.marginTop = '5px';
+                    img.style.boxShadow = '0 2px 5px rgba(0, 0, 0, 0.1)';
+                    img.style.objectFit = 'cover';
+                    img.classList.add('message-image');
+
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = '#';
+                    downloadLink.appendChild(img);
+
+                    downloadLink.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        downloadFile(fileUrl, attachment.FileName);
+                    });
+
+                    attachmentDiv.appendChild(downloadLink);
+                } else {
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = '#';
+                    downloadLink.textContent = attachment.FileName;
+
+                    downloadLink.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        downloadFile(fileUrl, attachment.FileName);
+                    });
+
+                    attachmentDiv.textContent = 'Вложение: ';
+                    attachmentDiv.appendChild(downloadLink);
+                }
+
                 messageDiv.appendChild(attachmentDiv);
             });
         }
@@ -395,7 +451,6 @@ function displayMessages(messages) {
 
     messageListContainer.scrollTop = messageListContainer.scrollHeight;
 }
-
 
 async function sendMessage(chatId, content) {
     const fileInput = document.getElementById('file-input');
@@ -421,8 +476,8 @@ async function sendMessage(chatId, content) {
             Content: content,
             SentDate: new Date().toISOString(),
             Attachments: fileInput.files[0] ? [{
-                FileId: 'temp',
-                FileName: fileInput.files[0].name
+                FileName: fileInput.files[0].name,
+                TempPreviewUrl: URL.createObjectURL(fileInput.files[0])
             }] : []
         };
 
@@ -439,8 +494,8 @@ async function sendMessage(chatId, content) {
             resetFilePreview();
 
             const realMessage = await response.json();
-            const tempMsgId = tempMessage.MessageId;
 
+            const tempMsgId = tempMessage.MessageId;
             const tempMsgElement = document.querySelector(`[data-message-id="${tempMsgId}"]`);
             if (tempMsgElement) {
                 tempMsgElement.setAttribute('data-message-id', realMessage.MessageId);
@@ -458,18 +513,6 @@ async function sendMessage(chatId, content) {
                             attachmentContainer.appendChild(document.createTextNode('Вложение: '));
                             attachmentContainer.appendChild(downloadLink);
                         });
-                    } else {
-                        const newAttachmentDiv = document.createElement('div');
-                        newAttachmentDiv.classList.add('attachment-info');
-                        realMessage.Attachments.forEach(attachment => {
-                            const downloadLink = document.createElement('a');
-                            downloadLink.href = `http://localhost:3000/api/files/${attachment.FileId}`;
-                            downloadLink.textContent = attachment.FileName;
-                            downloadLink.download = attachment.FileName;
-                            newAttachmentDiv.appendChild(document.createTextNode('Вложение: '));
-                            newAttachmentDiv.appendChild(downloadLink);
-                        });
-                        tempMsgElement.appendChild(newAttachmentDiv);
                     }
                 } else if (attachmentContainer) {
                     attachmentContainer.remove();
@@ -495,7 +538,7 @@ function displayNewMessage(message, currentUserId) {
 
         // Для отправки с текущего юзера без своего Имени и Фамилии
 
-        // if (message.SenderId !== currentUserId) {
+        // if (message.SenderId !== numericCurrentUserId) {
         //     const senderInfo = document.createElement('span');
         //     senderInfo.classList.add('message-sender');
         //     senderInfo.textContent = `${message.FirstName} ${message.LastName}: `;
@@ -516,14 +559,46 @@ function displayNewMessage(message, currentUserId) {
             message.Attachments.forEach(attachment => {
                 const attachmentDiv = document.createElement('div');
                 attachmentDiv.classList.add('attachment-info');
-                
-                const downloadLink = document.createElement('a');
-                downloadLink.href = `http://localhost:3000/api/files/${attachment.FileId}`;
-                downloadLink.textContent = attachment.FileName;
-                downloadLink.download = attachment.FileName;
-                
-                attachmentDiv.textContent = 'Вложение: ';
-                attachmentDiv.appendChild(downloadLink);
+
+                const fileName = attachment.FileName.toLowerCase();
+                const isImage = fileName.endsWith('.png') || fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.gif') || fileName.endsWith('.webp');
+                const fileUrl = attachment.TempPreviewUrl ? attachment.TempPreviewUrl : `http://localhost:3000/api/files/${attachment.FileId}`;
+
+                if (isImage) {
+                    const img = document.createElement('img');
+                    img.src = fileUrl;
+                    img.alt = attachment.FileName;
+                    img.style.maxWidth = '200px';
+                    img.style.borderRadius = '10px';
+                    img.style.marginTop = '5px';
+                    img.style.boxShadow = '0 2px 5px rgba(0, 0, 0, 0.1)';
+                    img.style.objectFit = 'cover';
+                    img.classList.add('message-image');
+
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = '#';
+                    downloadLink.appendChild(img);
+
+                    downloadLink.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        downloadFile(fileUrl, attachment.FileName);
+                    });
+
+                    attachmentDiv.appendChild(downloadLink);
+                } else {
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = '#';
+                    downloadLink.textContent = attachment.FileName;
+
+                    downloadLink.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        downloadFile(fileUrl, attachment.FileName);
+                    });
+
+                    attachmentDiv.textContent = 'Вложение: ';
+                    attachmentDiv.appendChild(downloadLink);
+                }
+
                 messageDiv.appendChild(attachmentDiv);
             });
         }
