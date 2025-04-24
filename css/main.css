@@ -135,6 +135,8 @@ header span {
     background: #FFFFFF;
     border-radius: 5px;
     box-sizing: border-box;
+    box-shadow: 2px 2px 5px #d1d1bf,
+                -2px 2px 5px #d1d1bf;
 }
 
 .search-container input[type="text"]:focus {
@@ -188,6 +190,14 @@ header span {
     width: 100%;
     height: 100%;
     object-fit: cover;
+}
+
+.user-list .user-item {
+    border-radius: 15px;
+    margin-bottom: 5px;
+    box-shadow: 2px 2px 5px #d1d1bf,
+                -2px 2px 5px #d1d1bf;
+
 }
 
 .user-item:last-child {
@@ -336,11 +346,15 @@ header span {
 .message.sent {
     align-self: flex-end;
     background-color: #bcc4bc;
+    box-shadow: 2px 2px 5px #acb6ac,
+                -2px 2px 5px #acb6ac;
 }
 
 .message.received {
     align-self: flex-start;
     background-color: #dad7cd;
+    box-shadow: 2px 2px 5px #c4c4b6,
+                -2px 2px 5px #c4c4b6;
 }
 
 .message.sent .message-sender {
