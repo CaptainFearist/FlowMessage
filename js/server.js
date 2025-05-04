@@ -5,7 +5,15 @@ const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
 const multer = require('multer');
-const upload = multer({ storage: multer.memoryStorage() });
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    // Чтобы не ломались русские символы в имени файла
+    file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+    cb(null, true);
+  }
+});
 
 const app = express();
 const port = 3000;
@@ -66,7 +74,7 @@ io.on('connection', socket => {
 
 app.post('/api/messages', upload.single('file'), async (req, res) => {
     const { chatId, senderId, content } = req.body;
-    const fileSize = req.body.fileSize;
+    const fileSize = req.file ? req.body.fileSize : null;
     const file = req.file;
 
     try {
@@ -81,9 +89,11 @@ app.post('/api/messages', upload.single('file'), async (req, res) => {
             { name: 'content', type: TYPES.NVarChar, value: content }
         ]);
         const messageId = messageResult[0].MessageId;
+        const sentDateFromDb = messageResult[0].SentDate;
 
         let fileId = null;
         if (file) {
+
             const fileExtension = path.extname(file.originalname).toLowerCase().substring(1);
             const fileTypeResult = await executeQuery(
                 `SELECT FileTypeId FROM FileTypes WHERE FileTypeName = @fileTypeName`,
@@ -106,6 +116,7 @@ app.post('/api/messages', upload.single('file'), async (req, res) => {
                 OUTPUT INSERTED.FileId
                 VALUES (@fileName, @fileContent, @fileTypeId, GETDATE(), @userId, @fileSize);
             `;
+
             const fileResult = await executeQuery(fileSql, [
                 { name: 'fileName', type: TYPES.NVarChar, value: file.originalname },
                 { name: 'fileContent', type: TYPES.VarBinary, value: file.buffer },
@@ -138,7 +149,7 @@ app.post('/api/messages', upload.single('file'), async (req, res) => {
             FirstName: firstName,
             LastName: lastName,
             Content: content,
-            SentDate: new Date().toISOString(),
+            SentDate: sentDateFromDb ? sentDateFromDb.toISOString() : new Date().toISOString(),
             Attachments: fileId ? [{
                 FileId: fileId,
                 FileName: file.originalname
