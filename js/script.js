@@ -337,14 +337,16 @@ function downloadFile(fileUrl, fileName) {
             return response.blob();
         })
         .then(blob => {
+            const file = new File([blob], fileName, { type: blob.type });
+
+            const url = URL.createObjectURL(file);
             const a = document.createElement('a');
-            const url = window.URL.createObjectURL(blob);
             a.href = url;
-            a.download = fileName;
+            a.download = file.name;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
+            URL.revokeObjectURL(url);
         })
         .catch(error => {
             console.error('Ошибка при скачивании файла:', error);
@@ -443,9 +445,22 @@ function displayMessages(messages) {
 
         const timeStamp = document.createElement('span');
         timeStamp.classList.add('message-timestamp');
-        timeStamp.textContent = new Date(message.SentDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        try {
+            const sentDate = new Date(message.SentDate);
+            if (isNaN(sentDate)) throw new Error('Invalid Date');
+            const time = sentDate.toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: 'UTC'
+            });
+            timeStamp.textContent = time;
+        } catch (e) {
+            console.error('Ошибка форматирования даты:', e, 'SentDate:', message.SentDate);
+            timeStamp.textContent = '--:--';
+        }
+        
         messageDiv.appendChild(timeStamp);
-
         messageListContainer.appendChild(messageDiv);
     });
 
